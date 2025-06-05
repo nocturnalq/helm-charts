@@ -1,0 +1,47 @@
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  instances: {{ .Values.replicas }}
+  {{- if .Values.resources }}
+  resources: {{- toYaml .Values.resources | nindent 4 }}
+  {{- else if ne .Values.resourcesPreset "none" }}
+  resources: {{- include "resources.preset" (dict "type" .Values.resourcesPreset) | nindent 4 }}
+  {{- end }}
+
+  enableSuperuserAccess: true
+  {{- $configMap := lookup "v1" "ConfigMap" "cozy-system" "cozystack-scheduling" }}
+  {{- if $configMap }}
+  {{- $rawConstraints := get $configMap.data "globalAppTopologySpreadConstraints" }}
+  {{- if $rawConstraints }}
+  {{- $rawConstraints | fromYaml | toYaml | nindent 2 }}
+    labelSelector:
+      matchLabels:
+        cnpg.io/cluster: {{ .Release.Name }}
+  {{- end }}
+  {{- end }}
+  postgresql:
+    parameters:
+      max_wal_senders: "30"
+      {{- with .Values.postgresql.parameters.max_connections }}
+      max_connections: "{{ . }}"
+      {{- end }}
+
+  minSyncReplicas: {{ .Values.quorum.minSyncReplicas }}
+  maxSyncReplicas: {{ .Values.quorum.maxSyncReplicas }}
+
+  monitoring:
+    enablePodMonitor: true
+
+  storage:
+    size: {{ required ".Values.size is required" .Values.size }}
+    {{- with .Values.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+
+  inheritedMetadata:
+    labels:
+      app.kubernetes.io/name: postgres.cloud.1440.space
+      app.kubernets.io/instance: {{ $.Release.Name }}
